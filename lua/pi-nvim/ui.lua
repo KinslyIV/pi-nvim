@@ -263,7 +263,27 @@ function M.open(opts)
 
   local kopts = { buffer = input_buf, noremap = true, silent = true }
 
-  vim.keymap.set("i", "<CR>", send, kopts)
+  -- Smart <CR>: insert newline when there is content after the cursor line,
+  -- otherwise send the prompt.
+  vim.keymap.set({ "i", "n" }, "<CR>", function()
+    local lines = vim.api.nvim_buf_get_lines(input_buf, 0, -1, false)
+    local cursor = vim.api.nvim_win_get_cursor(input_win)
+    local has_content_after = false
+    for i = cursor[1] + 1, #lines do
+      if lines[i] ~= "" then
+        has_content_after = true
+        break
+      end
+    end
+    if has_content_after then
+      -- Still editing: insert a newline
+      vim.api.nvim_buf_set_lines(input_buf, cursor[1], cursor[1], false, { "" })
+      vim.api.nvim_win_set_cursor(input_win, { cursor[1] + 1, 0 })
+      resize_input()
+    else
+      send()
+    end
+  end, kopts)
   vim.keymap.set({ "i", "n" }, "<Esc>", close, kopts)
   vim.keymap.set({ "i", "n" }, "<C-c>", close, kopts)
   -- Toggles: only in normal mode so they don't interfere with typing
