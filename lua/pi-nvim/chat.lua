@@ -11,6 +11,8 @@ local ns_highlight = nil
 local is_open = false
 local source_buf = nil
 local diagnostics_included = false
+local selection_start_line = nil
+local selection_end_line = nil
 local picker_active = false  -- suspends BufLeave auto-close while pickers are open
 
 --- Get accent color from current theme
@@ -114,6 +116,8 @@ function M.close()
   is_open = false
   source_buf = nil
   picker_active = false
+  selection_start_line = nil
+  selection_end_line = nil
   if active_connection then
     pcall(function() active_connection:read_stop() end)
     pcall(function() active_connection:close() end)
@@ -307,6 +311,8 @@ function M.open(opts)
 
   is_open = true
   diagnostics_included = false
+  selection_start_line = nil
+  selection_end_line = nil
   setup_highlights()
 
   -- Remember the source buffer for LSP symbol queries
@@ -462,7 +468,7 @@ function M.open(opts)
   vim.keymap.set({ "i", "n" }, "<C-d>", function()
     local bufnr = source_buf and vim.api.nvim_buf_is_valid(source_buf) and source_buf
       or vim.api.nvim_get_current_buf()
-    local diags = require("pi-nvim").get_diagnostics(bufnr)
+    local diags = require("pi-nvim").get_diagnostics(bufnr, selection_start_line, selection_end_line)
     if not diags or #diags == 0 then
       vim.notify("No LSP diagnostics found", vim.log.levels.INFO)
       return
@@ -561,6 +567,10 @@ function M.open_with_selection(selection)
     vim.notify("No selection to send", vim.log.levels.WARN)
     return
   end
+
+  -- Track selection range so diagnostics toggle can filter to it
+  selection_start_line = selection.start_line or 1
+  selection_end_line = selection.end_line or 1
 
   local file = selection.file or vim.fn.expand("%:.")
   local ft = selection.ft or vim.bo.filetype
