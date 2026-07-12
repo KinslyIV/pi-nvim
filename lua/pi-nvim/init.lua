@@ -70,6 +70,10 @@ function M.setup(opts)
     M.send_diagnostics_quiet()
   end, { desc = "Send LSP diagnostics to pi with a prompt (no chat)" })
 
+  vim.api.nvim_create_user_command("PiSendSelectionDiagnosticsQuiet", function()
+    M.send_selection_diagnostics_quiet()
+  end, { range = true, desc = "Send selection + diagnostics to pi with a prompt (no chat)" })
+
   vim.api.nvim_create_user_command("PiChat", function(args)
     local chat = require("pi-nvim.chat")
     if args.args and args.args ~= "" then
@@ -577,6 +581,45 @@ function M.send_diagnostics_quiet()
     else
       message = string.format("%s\n\n%s", formatted, input)
     end
+    M.prompt_quiet(message)
+  end)
+end
+
+--- Send visual selection + LSP diagnostics with a prompt (no chat).
+function M.send_selection_diagnostics_quiet()
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  local lines = vim.fn.getregion(start_pos, end_pos, { type = vim.fn.visualmode() })
+  local selection = table.concat(lines, "\n")
+
+  if selection == "" then
+    vim.notify("Empty selection", vim.log.levels.WARN)
+    return
+  end
+
+  local bufnr = vim.api.nvim_get_current_buf()
+  local diagnostics = M.get_diagnostics(bufnr, start_pos[2], end_pos[2])
+  local formatted = M.format_diagnostics(diagnostics)
+  local file = vim.fn.expand("%:.")
+  local start_line = start_pos[2]
+  local end_line = end_pos[2]
+  local ft = vim.bo.filetype
+
+  vim.ui.input({ prompt = "Pi prompt (selection + diagnostics): " }, function(input)
+    if not input then return end
+
+    local header = string.format("%s lines %d-%d", file, start_line, end_line)
+    local message
+    if input == "" then
+      message = string.format("Look at this code from %s:\n\n```%s\n%s\n```", header, ft, selection)
+    else
+      message = string.format("%s\n\nFrom %s:\n```%s\n%s\n```", input, header, ft, selection)
+    end
+
+    if diagnostics and #diagnostics > 0 then
+      message = message .. "\n\n" .. formatted
+    end
+
     M.prompt_quiet(message)
   end)
 end
