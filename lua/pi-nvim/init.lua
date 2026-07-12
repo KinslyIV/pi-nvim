@@ -49,6 +49,27 @@ function M.setup(opts)
     M.send_diagnostics()
   end, { desc = "Send LSP diagnostics to pi with a prompt" })
 
+  -- Quiet / fire-and-forget commands (no chat window)
+  vim.api.nvim_create_user_command("PiSendQuiet", function()
+    M.prompt_quiet()
+  end, { desc = "Send a prompt to pi (no chat)" })
+
+  vim.api.nvim_create_user_command("PiSendFileQuiet", function()
+    M.send_file_quiet()
+  end, { desc = "Send current file to pi with a prompt (no chat)" })
+
+  vim.api.nvim_create_user_command("PiSendSelectionQuiet", function()
+    M.send_selection_quiet()
+  end, { range = true, desc = "Send visual selection to pi with a prompt (no chat)" })
+
+  vim.api.nvim_create_user_command("PiSendBufferQuiet", function()
+    M.send_buffer_quiet()
+  end, { desc = "Send entire buffer to pi with a prompt (no chat)" })
+
+  vim.api.nvim_create_user_command("PiSendDiagnosticsQuiet", function()
+    M.send_diagnostics_quiet()
+  end, { desc = "Send LSP diagnostics to pi with a prompt (no chat)" })
+
   vim.api.nvim_create_user_command("PiChat", function(args)
     local chat = require("pi-nvim.chat")
     if args.args and args.args ~= "" then
@@ -444,6 +465,119 @@ function M.send_diagnostics()
       message = string.format("%s\n\n%s", formatted, input)
     end
     M.prompt(message)
+  end)
+end
+
+--- Send a prompt string to pi without opening chat (fire-and-forget).
+--- @param message string|nil  If nil, prompts the user for input
+function M.prompt_quiet(message)
+  if message then
+    M.send_raw({ type = "prompt", message = message }, function(err, resp)
+      if err then return end
+      if resp and resp.ok then
+        vim.notify("Sent to pi", vim.log.levels.INFO)
+      else
+        vim.notify("pi error: " .. (resp and resp.error or "unknown"), vim.log.levels.ERROR)
+      end
+    end)
+  else
+    vim.ui.input({ prompt = "Pi prompt: " }, function(input)
+      if input and input ~= "" then
+        M.prompt_quiet(input)
+      end
+    end)
+  end
+end
+
+--- Send the current file path with optional prompt (no chat).
+function M.send_file_quiet()
+  local file = vim.fn.expand("%:p")
+  if file == "" then
+    vim.notify("No file open", vim.log.levels.WARN)
+    return
+  end
+
+  vim.ui.input({ prompt = "Pi prompt (file: " .. vim.fn.expand("%:.") .. "): " }, function(input)
+    if not input then return end
+
+    local message
+    if input == "" then
+      message = string.format("Look at this file: %s", file)
+    else
+      message = string.format("File: %s\n\n%s", file, input)
+    end
+    M.prompt_quiet(message)
+  end)
+end
+
+--- Send the visual selection with a prompt (no chat).
+function M.send_selection_quiet()
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  local lines = vim.fn.getregion(start_pos, end_pos, { type = vim.fn.visualmode() })
+  local selection = table.concat(lines, "\n")
+
+  if selection == "" then
+    vim.notify("Empty selection", vim.log.levels.WARN)
+    return
+  end
+
+  local file = vim.fn.expand("%:.")
+  local start_line = start_pos[2]
+  local end_line = end_pos[2]
+  local ft = vim.bo.filetype
+
+  vim.ui.input({ prompt = "Pi prompt (selection): " }, function(input)
+    if not input then return end
+
+    local header = string.format("%s lines %d-%d", file, start_line, end_line)
+    local message
+    if input == "" then
+      message = string.format("Look at this code from %s:\n\n```%s\n%s\n```", header, ft, selection)
+    else
+      message = string.format("%s\n\nFrom %s:\n```%s\n%s\n```", input, header, ft, selection)
+    end
+    M.prompt_quiet(message)
+  end)
+end
+
+--- Send the entire buffer contents with a prompt (no chat).
+function M.send_buffer_quiet()
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local content = table.concat(lines, "\n")
+  local file = vim.fn.expand("%:.")
+  local ft = vim.bo.filetype
+
+  vim.ui.input({ prompt = "Pi prompt (buffer): " }, function(input)
+    if not input then return end
+
+    local message
+    if input == "" then
+      message = string.format("Look at this file %s:\n\n```%s\n%s\n```", file, ft, content)
+    else
+      message = string.format("%s\n\nFile: %s\n```%s\n%s\n```", input, file, ft, content)
+    end
+    M.prompt_quiet(message)
+  end)
+end
+
+--- Send LSP diagnostics with optional prompt (no chat).
+function M.send_diagnostics_quiet()
+  local bufnr = vim.api.nvim_get_current_buf()
+  local diagnostics = M.get_diagnostics(bufnr)
+  local formatted = M.format_diagnostics(diagnostics)
+  local file = vim.fn.expand("%:.")
+
+  vim.ui.input({ prompt = "Pi prompt (diagnostics): " }, function(input)
+    if not input then return end
+
+    local message
+    if file ~= "" then
+      message = string.format("File: %s\n\n%s\n\n%s", file, formatted, input)
+    else
+      message = string.format("%s\n\n%s", formatted, input)
+    end
+    M.prompt_quiet(message)
   end)
 end
 
